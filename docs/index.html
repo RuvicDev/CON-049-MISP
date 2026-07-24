@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="doc_title">Conector MISP — Ruvic</title>
+  <link rel="stylesheet" href="assets/ruvic.css">
+</head>
+<body class="guide">
+  <div class="guide-shell">
+  <main class="ruvic-container">
+    <nav class="ruvic-toc" aria-label="Índice">
+      <h2 data-i18n="toc_title">Contenido</h2>
+      <ol>
+        <li><a href="#que-es" data-i18n="toc.que_es">¿Qué es y para qué sirve?</a></li>
+        <li><a href="#prerrequisitos" data-i18n="toc.prerrequisitos">Prerrequisitos</a></li>
+        <li><a href="#configuracion-fabricante" data-i18n="toc.configuracion_fabricante">Configuración en el fabricante</a></li>
+        <li><a href="#permisos" data-i18n="toc.permisos">Permisos requeridos</a></li>
+        <li><a href="#configuracion-ruvic" data-i18n="toc.configuracion_ruvic">Configuración en Ruvic</a></li>
+        <li><a href="#verificacion" data-i18n="toc.verificacion">Verificación</a></li>
+        <li><a href="#solucion-problemas" data-i18n="toc.solucion_problemas">Solución de problemas</a></li>
+        <li><a href="#faq-seguridad" data-i18n="toc.faq_seguridad">Preguntas frecuentes y notas de seguridad</a></li>
+      </ol>
+    </nav>
+
+    <h1 data-i18n="guide_title">Conector MISP — Guía de configuración</h1>
+    <p class="guide-updated" data-i18n="guide_updated">Última actualización: 2026-07-24</p>
+
+    <section>
+      <h2 id="que-es" data-i18n="section.que_es">¿Qué es y para qué sirve?</h2>
+      <p data-i18n="section.que_es.body_1">El conector MISP permite que el agente de Ruvic intercambie indicadores de amenaza (threat intel) con tu instancia de MISP: puede buscar un indicador de compromiso (IOC), crear un evento y agregar un atributo a un evento existente. Una vez configurado, puedes pedirle al agente cosas como:</p>
+      <ul>
+        <li data-i18n="section.que_es.example_1">"Busca si la IP 45.33.22.11 ya está registrada como IOC en MISP."</li>
+        <li data-i18n="section.que_es.example_2">"Crea un evento por la campaña de phishing detectada en finanzas."</li>
+        <li data-i18n="section.que_es.example_3">"Agrega este hash SHA256 como atributo al evento 123."</li>
+      </ul>
+      <p data-i18n="section.que_es.body_2">Operaciones soportadas:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.operacion">Operación</th>
+            <th data-i18n="table.que_hace">Qué hace</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>search_ioc</code></td>
+            <td data-i18n="op.search_ioc">Busca un indicador de compromiso por su valor (IP, dominio, hash, URL, etc.), con filtro opcional por tipo</td>
+          </tr>
+          <tr>
+            <td><code>create_event</code></td>
+            <td data-i18n="op.create_event">Crea un nuevo evento de amenaza (con nivel de riesgo, distribución y estado de análisis)</td>
+          </tr>
+          <tr>
+            <td><code>add_attribute</code></td>
+            <td data-i18n="op.add_attribute">Agrega un atributo (IOC) a un evento existente, con categoría y marca opcional para IDS/IPS</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="callout.escribe.title">Este conector SÍ escribe</span>
+        <span data-i18n="callout.escribe.body">A diferencia de conectores de solo lectura, `create_event` y `add_attribute` crean datos reales y permanentes en tu instancia de MISP. No es de solo consulta.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2 id="prerrequisitos" data-i18n="section.prerrequisitos">Prerrequisitos</h2>
+      <ul>
+        <li data-i18n="prereq.1">Una instancia de <strong>MISP</strong> accesible por HTTPS (propia, en la nube o imagen oficial <code>misp/misp-docker</code>).</li>
+        <li data-i18n="prereq.2">Acceso administrativo a MISP (rol <strong>Site Admin</strong> u <strong>Org Admin</strong>), solo durante la configuración inicial, para crear el rol personalizado y el usuario de servicio.</li>
+        <li data-i18n="prereq.3"><strong>Acceso de red</strong> desde la plataforma Ruvic a la instancia de MISP (host y puerto alcanzables por HTTPS).</li>
+        <li data-i18n="prereq.4">La <strong>URL base</strong> de tu instancia de MISP (ej. <code>https://misp.empresa.com</code>).</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 id="configuracion-fabricante" data-i18n="section.configuracion_fabricante">Configuración en el fabricante</h2>
+      <p data-i18n="fabricante.intro">Vas a crear un <strong>rol personalizado de mínimo privilegio</strong> y un <strong>usuario de servicio dedicado</strong> para Ruvic. No reutilices tu propio usuario ni un rol con permisos de administración: un usuario dedicado permite auditar la actividad del agente y limitar el acceso al mínimo necesario.</p>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="step.1.label">Crea el rol personalizado.</strong>
+          <span data-i18n="step.1.body">Ve a <strong>Administration → Roles → Add Role</strong>. Crea un rol nuevo (ej. <code>ruvic-connector</code>) y habilita únicamente <code>Perm: Auth</code> (permite autenticarse vía API con una Auth Key) y <code>Perm: Add</code> (permite crear eventos y agregar atributos). Deja desactivados todos los demás permisos, en particular <code>Perm: Site Admin</code>, <code>Perm: Sync</code>, <code>Perm: Audit</code> y <code>Perm: Delegate</code>.</span>
+          <div class="screenshot-placeholder" data-i18n="img.roles.alt">[ Captura: formulario de Administration → Roles con Perm: Auth y Perm: Add marcados — reemplazar por assets/img/misp-role.png ]</div>
+        </li>
+        <li>
+          <strong data-i18n="step.2.label">Crea un usuario de servicio dedicado.</strong>
+          <span data-i18n="step.2.body">Ve a <strong>Administration → Users → Add User</strong>. Crea un usuario nuevo (ej. <code>ruvic-connector@empresa.com</code>) que se use exclusivamente para este conector, no un usuario personal.</span>
+        </li>
+        <li>
+          <strong data-i18n="step.3.label">Asigna el rol al usuario de servicio.</strong>
+          <span data-i18n="step.3.body">En el formulario del usuario, selecciona como <strong>Role</strong> el rol personalizado creado en el paso 1 (<code>ruvic-connector</code>) y guarda.</span>
+        </li>
+        <li>
+          <strong data-i18n="step.4.label">Genera la Auth Key del usuario de servicio.</strong>
+          <span data-i18n="step.4.body">Inicia sesión como el usuario de servicio (o pide a un administrador que la genere en su nombre) y ve a <strong>Event Actions → Auth keys → Add authentication key</strong>. Copia la Auth Key generada de inmediato: MISP solo la muestra una vez.</span>
+          <div class="screenshot-placeholder" data-i18n="img.authkey.alt">[ Captura: Event Actions → Auth keys → Add authentication key — reemplazar por assets/img/misp-authkey.png ]</div>
+        </li>
+        <li>
+          <strong data-i18n="step.5.label">Anota los datos para el formulario de Ruvic.</strong>
+          <span data-i18n="step.5.body">Guarda la URL base de tu instancia (ej. <code>https://misp.empresa.com</code>) y la Auth Key generada. Los necesitarás en la siguiente sección.</span>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2 id="permisos" data-i18n="section.permisos">Permisos requeridos</h2>
+      <p data-i18n="permisos.intro">Principio de mínimo privilegio: el rol del usuario de servicio solo necesita estos dos permisos. No otorgues roles de administración ni sincronización.</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.permiso">Permiso</th>
+            <th data-i18n="table.para_que">Para qué sirve</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Perm: Auth</code></td>
+            <td data-i18n="perm.auth">Permite autenticarse en la API REST de MISP mediante la Auth Key. Requerido para toda operación del conector.</td>
+          </tr>
+          <tr>
+            <td><code>Perm: Add</code></td>
+            <td data-i18n="perm.add">Permite crear eventos (<code>create_event</code>) y agregar atributos a eventos existentes (<code>add_attribute</code>).</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="callout.no_otorgar.title">No otorgues estos permisos</span>
+        <span data-i18n="callout.no_otorgar.body"><code>Perm: Site Admin</code> (administración total de la plataforma), <code>Perm: Sync</code> (sincronización con otras instancias MISP) y <code>Perm: Audit</code> (acceso a logs de auditoría) no son necesarios para las operaciones del conector y amplían innecesariamente el impacto de una Auth Key comprometida.</span>
+      </div>
+      <p data-i18n="permisos.nota"><code>search_ioc</code> funciona con la búsqueda de atributos (<code>/attributes/restSearch</code>), disponible para cualquier usuario autenticado con <code>Perm: Auth</code> sobre los eventos visibles para su organización; no requiere permisos adicionales.</p>
+    </section>
+
+    <section>
+      <h2 id="configuracion-ruvic" data-i18n="section.configuracion_ruvic">Configuración en Ruvic</h2>
+      <p data-i18n="ruvic.intro">Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>MISP</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario (modo de autenticación <strong>Auth Key</strong>) con los valores obtenidos en la sección anterior:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.campo">Campo del formulario</th>
+            <th data-i18n="table.valor">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="field.base_url">URL base de MISP</td>
+            <td data-i18n="field.base_url.value">URL completa de tu instancia, con esquema (ej. <code>https://misp.empresa.com</code>)</td>
+          </tr>
+          <tr>
+            <td data-i18n="field.api_key">Auth Key</td>
+            <td data-i18n="field.api_key.value">La Auth Key generada en el paso 4 de la sección anterior. Se guarda cifrada como secreto: la interfaz no volverá a mostrarla</td>
+          </tr>
+          <tr>
+            <td data-i18n="field.verify_ssl">Verificar certificado TLS</td>
+            <td data-i18n="field.verify_ssl.value">Activado por defecto. Desactívalo solo para instancias con certificado autofirmado en entornos de prueba</td>
+          </tr>
+          <tr>
+            <td data-i18n="field.connect_timeout">Timeout de conexión (segundos)</td>
+            <td data-i18n="field.connect_timeout.value">Opcional; <code>15</code> segundos por defecto</td>
+          </tr>
+        </tbody>
+      </table>
+      <p data-i18n="ruvic.guardar">Guarda y pulsa <span class="ruvic-button" data-i18n="ruvic.boton_probar">Probar conexión</span> — la plataforma se conectará a tu instancia de MISP y confirmará que la Auth Key y la red funcionan.</p>
+      <div class="screenshot-placeholder" data-i18n="img.form.alt">[ Captura: formulario del conector MISP en Settings → Conectores — reemplazar por assets/img/misp-form.png ]</div>
+    </section>
+
+    <section>
+      <h2 id="verificacion" data-i18n="section.verificacion">Verificación</h2>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="verif.1.label">Test de conexión exitoso.</strong>
+          <span data-i18n="verif.1.body">El botón <em>Probar conexión</em> debe responder con éxito (consulta la versión del servidor MISP). La tarjeta del conector cambia a estado <strong>Configurado</strong>.</span>
+        </li>
+        <li>
+          <strong data-i18n="verif.2.label">Prueba mínima con el agente.</strong>
+          <span data-i18n="verif.2.body">Abre una conversación nueva con el agente y pídele:</span>
+          <blockquote data-i18n="verif.2.quote">"Busca en MISP si hay algún IOC registrado con el valor 8.8.8.8."</blockquote>
+          <span data-i18n="verif.2.body2">El agente debe responder con los resultados reales de tu instancia (o indicar que no hay coincidencias). Si lo hace, el conector quedó operativo de punta a punta. Evita pedirle que cree eventos o atributos de prueba en una instancia productiva.</span>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2 id="solucion-problemas" data-i18n="section.solucion_problemas">Solución de problemas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.mensaje">Mensaje / síntoma</th>
+            <th data-i18n="table.causa">Causa probable y solución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="tbl.1.sintoma">"Auth Key inválida o sin permiso suficiente" (error 401/403)</td>
+            <td data-i18n="tbl.1.causa">La Auth Key es incorrecta, expiró o fue revocada, o el rol del usuario de servicio no tiene <code>Perm: Auth</code>. Genera una nueva Auth Key desde el perfil del usuario (<em>Event Actions → Auth keys</em>) y actualízala en el formulario de Ruvic.</td>
+          </tr>
+          <tr>
+            <td data-i18n="tbl.2.sintoma">"No se pudo alcanzar MISP" (timeout de red)</td>
+            <td data-i18n="tbl.2.causa">La plataforma Ruvic no alcanza el host/puerto de MISP. Verifica que la URL base sea correcta y accesible por HTTPS desde fuera de tu red interna, revisa el firewall y aumenta el <em>Timeout de conexión</em> si la instancia responde lento.</td>
+          </tr>
+          <tr>
+            <td data-i18n="tbl.3.sintoma">Error al agregar un atributo: el evento no existe</td>
+            <td data-i18n="tbl.3.causa"><code>add_attribute</code> requiere un <code>event_id</code> válido, obtenido del resultado de <code>create_event</code> o de una búsqueda previa. Verifica que el evento exista y sea visible para el usuario de servicio.</td>
+          </tr>
+          <tr>
+            <td data-i18n="tbl.4.sintoma">Error de datos: tipo de atributo inválido</td>
+            <td data-i18n="tbl.4.causa">El <code>type_</code> indicado no coincide con el vocabulario controlado de MISP. Usa tipos válidos como <code>ip-dst</code>, <code>ip-src</code>, <code>domain</code>, <code>hostname</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>, <code>email-src</code>.</td>
+          </tr>
+          <tr>
+            <td data-i18n="tbl.5.sintoma">El conector aparece "Sin configurar" tras guardar</td>
+            <td data-i18n="tbl.5.causa">Algún campo obligatorio quedó vacío (URL base o Auth Key). Ábrelo de nuevo y completa ambos campos; luego pulsa <em>Probar conexión</em>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2 id="faq-seguridad" data-i18n="section.faq_seguridad">Preguntas frecuentes y notas de seguridad</h2>
+
+      <h3 data-i18n="faq.1.q">¿El agente puede crear datos reales en MISP?</h3>
+      <p data-i18n="faq.1.a">Sí. A diferencia de conectores de solo lectura, <code>create_event</code> crea eventos reales y <code>add_attribute</code> agrega atributos reales y permanentes a tu instancia. El agente debe confirmar contigo antes de ejecutar estas operaciones si no fueron pedidas explícitamente. Usa siempre <code>distribution=0</code> (solo tu organización) salvo que quieras compartir el evento más ampliamente.</p>
+
+      <h3 data-i18n="faq.2.q">¿Dónde queda guardada la Auth Key?</h3>
+      <p data-i18n="faq.2.a">Como secreto cifrado en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarla; solo indica "definida". Para cambiarla, genera una nueva Auth Key en MISP y pégala en el formulario del conector; para conservarla al editar otros campos, deja el campo vacío.</p>
+
+      <h3 data-i18n="faq.3.q">Rotación de la Auth Key</h3>
+      <p data-i18n="faq.3.a">Recomendado cada 90 días o según tu política: genera una nueva Auth Key desde el perfil del usuario de servicio (<em>Event Actions → Auth keys → Add authentication key</em>), revoca la anterior, actualízala en el formulario del conector y pulsa <em>Probar conexión</em>.</p>
+
+      <h3 data-i18n="faq.4.q">¿Qué hago si la Auth Key se compromete?</h3>
+      <ol>
+        <li data-i18n="faq.4.a1">Revoca la Auth Key comprometida de inmediato desde <em>Event Actions → Auth keys</em> en el perfil del usuario de servicio, o desactiva el usuario en <strong>Administration → Users</strong>.</li>
+        <li data-i18n="faq.4.a2">Revisa los logs de auditoría de MISP para detectar eventos o atributos creados sin autorización.</li>
+        <li data-i18n="faq.4.a3">Genera una nueva Auth Key y actualízala en el formulario del conector de Ruvic.</li>
+      </ol>
+
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="callout.buenas_practicas.title">Buenas prácticas</span>
+        <span data-i18n="callout.buenas_practicas.body">Usa siempre un usuario de servicio dedicado con un rol de mínimo privilegio (<code>Perm: Auth</code> + <code>Perm: Add</code> únicamente); nunca otorgues <code>Perm: Site Admin</code>, <code>Perm: Sync</code> ni <code>Perm: Audit</code> al usuario del conector; y no compartas la Auth Key por canales no seguros.</span>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  <script>
+    const I18N = {
+      es: {
+        doc_title: "Conector MISP — Ruvic",
+        toc_title: "Contenido",
+        "toc.que_es": "¿Qué es y para qué sirve?",
+        "toc.prerrequisitos": "Prerrequisitos",
+        "toc.configuracion_fabricante": "Configuración en el fabricante",
+        "toc.permisos": "Permisos requeridos",
+        "toc.configuracion_ruvic": "Configuración en Ruvic",
+        "toc.verificacion": "Verificación",
+        "toc.solucion_problemas": "Solución de problemas",
+        "toc.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        guide_title: "Conector MISP — Guía de configuración",
+        guide_updated: "Última actualización: 2026-07-24",
+        "section.que_es": "¿Qué es y para qué sirve?",
+        "section.que_es.body_1": "El conector MISP permite que el agente de Ruvic intercambie indicadores de amenaza (threat intel) con tu instancia de MISP: puede buscar un indicador de compromiso (IOC), crear un evento y agregar un atributo a un evento existente. Una vez configurado, puedes pedirle al agente cosas como:",
+        "section.que_es.example_1": "\"Busca si la IP 45.33.22.11 ya está registrada como IOC en MISP.\"",
+        "section.que_es.example_2": "\"Crea un evento por la campaña de phishing detectada en finanzas.\"",
+        "section.que_es.example_3": "\"Agrega este hash SHA256 como atributo al evento 123.\"",
+        "section.que_es.body_2": "Operaciones soportadas:",
+        "table.operacion": "Operación",
+        "table.que_hace": "Qué hace",
+        "op.search_ioc": "Busca un indicador de compromiso por su valor (IP, dominio, hash, URL, etc.), con filtro opcional por tipo",
+        "op.create_event": "Crea un nuevo evento de amenaza (con nivel de riesgo, distribución y estado de análisis)",
+        "op.add_attribute": "Agrega un atributo (IOC) a un evento existente, con categoría y marca opcional para IDS/IPS",
+        "callout.escribe.title": "Este conector SÍ escribe",
+        "callout.escribe.body": "A diferencia de conectores de solo lectura, `create_event` y `add_attribute` crean datos reales y permanentes en tu instancia de MISP. No es de solo consulta.",
+        "section.prerrequisitos": "Prerrequisitos",
+        "prereq.1": "Una instancia de <strong>MISP</strong> accesible por HTTPS (propia, en la nube o imagen oficial <code>misp/misp-docker</code>).",
+        "prereq.2": "Acceso administrativo a MISP (rol <strong>Site Admin</strong> u <strong>Org Admin</strong>), solo durante la configuración inicial, para crear el rol personalizado y el usuario de servicio.",
+        "prereq.3": "<strong>Acceso de red</strong> desde la plataforma Ruvic a la instancia de MISP (host y puerto alcanzables por HTTPS).",
+        "prereq.4": "La <strong>URL base</strong> de tu instancia de MISP (ej. <code>https://misp.empresa.com</code>).",
+        "section.configuracion_fabricante": "Configuración en el fabricante",
+        "fabricante.intro": "Vas a crear un <strong>rol personalizado de mínimo privilegio</strong> y un <strong>usuario de servicio dedicado</strong> para Ruvic. No reutilices tu propio usuario ni un rol con permisos de administración: un usuario dedicado permite auditar la actividad del agente y limitar el acceso al mínimo necesario.",
+        "step.1.label": "Crea el rol personalizado.",
+        "step.1.body": "Ve a <strong>Administration → Roles → Add Role</strong>. Crea un rol nuevo (ej. <code>ruvic-connector</code>) y habilita únicamente <code>Perm: Auth</code> (permite autenticarse vía API con una Auth Key) y <code>Perm: Add</code> (permite crear eventos y agregar atributos). Deja desactivados todos los demás permisos, en particular <code>Perm: Site Admin</code>, <code>Perm: Sync</code>, <code>Perm: Audit</code> y <code>Perm: Delegate</code>.",
+        "img.roles.alt": "[ Captura: formulario de Administration → Roles con Perm: Auth y Perm: Add marcados — reemplazar por assets/img/misp-role.png ]",
+        "step.2.label": "Crea un usuario de servicio dedicado.",
+        "step.2.body": "Ve a <strong>Administration → Users → Add User</strong>. Crea un usuario nuevo (ej. <code>ruvic-connector@empresa.com</code>) que se use exclusivamente para este conector, no un usuario personal.",
+        "step.3.label": "Asigna el rol al usuario de servicio.",
+        "step.3.body": "En el formulario del usuario, selecciona como <strong>Role</strong> el rol personalizado creado en el paso 1 (<code>ruvic-connector</code>) y guarda.",
+        "step.4.label": "Genera la Auth Key del usuario de servicio.",
+        "step.4.body": "Inicia sesión como el usuario de servicio (o pide a un administrador que la genere en su nombre) y ve a <strong>Event Actions → Auth keys → Add authentication key</strong>. Copia la Auth Key generada de inmediato: MISP solo la muestra una vez.",
+        "img.authkey.alt": "[ Captura: Event Actions → Auth keys → Add authentication key — reemplazar por assets/img/misp-authkey.png ]",
+        "step.5.label": "Anota los datos para el formulario de Ruvic.",
+        "step.5.body": "Guarda la URL base de tu instancia (ej. <code>https://misp.empresa.com</code>) y la Auth Key generada. Los necesitarás en la siguiente sección.",
+        "section.permisos": "Permisos requeridos",
+        "permisos.intro": "Principio de mínimo privilegio: el rol del usuario de servicio solo necesita estos dos permisos. No otorgues roles de administración ni sincronización.",
+        "table.permiso": "Permiso",
+        "table.para_que": "Para qué sirve",
+        "perm.auth": "Permite autenticarse en la API REST de MISP mediante la Auth Key. Requerido para toda operación del conector.",
+        "perm.add": "Permite crear eventos (<code>create_event</code>) y agregar atributos a eventos existentes (<code>add_attribute</code>).",
+        "callout.no_otorgar.title": "No otorgues estos permisos",
+        "callout.no_otorgar.body": "<code>Perm: Site Admin</code> (administración total de la plataforma), <code>Perm: Sync</code> (sincronización con otras instancias MISP) y <code>Perm: Audit</code> (acceso a logs de auditoría) no son necesarios para las operaciones del conector y amplían innecesariamente el impacto de una Auth Key comprometida.",
+        "permisos.nota": "<code>search_ioc</code> funciona con la búsqueda de atributos (<code>/attributes/restSearch</code>), disponible para cualquier usuario autenticado con <code>Perm: Auth</code> sobre los eventos visibles para su organización; no requiere permisos adicionales.",
+        "section.configuracion_ruvic": "Configuración en Ruvic",
+        "ruvic.intro": "Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>MISP</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario (modo de autenticación <strong>Auth Key</strong>) con los valores obtenidos en la sección anterior:",
+        "table.campo": "Campo del formulario",
+        "table.valor": "Valor",
+        "field.base_url": "URL base de MISP",
+        "field.base_url.value": "URL completa de tu instancia, con esquema (ej. <code>https://misp.empresa.com</code>)",
+        "field.api_key": "Auth Key",
+        "field.api_key.value": "La Auth Key generada en el paso 4 de la sección anterior. Se guarda cifrada como secreto: la interfaz no volverá a mostrarla",
+        "field.verify_ssl": "Verificar certificado TLS",
+        "field.verify_ssl.value": "Activado por defecto. Desactívalo solo para instancias con certificado autofirmado en entornos de prueba",
+        "field.connect_timeout": "Timeout de conexión (segundos)",
+        "field.connect_timeout.value": "Opcional; <code>15</code> segundos por defecto",
+        "ruvic.guardar": "Guarda y pulsa Probar conexión — la plataforma se conectará a tu instancia de MISP y confirmará que la Auth Key y la red funcionan.",
+        "ruvic.boton_probar": "Probar conexión",
+        "img.form.alt": "[ Captura: formulario del conector MISP en Settings → Conectores — reemplazar por assets/img/misp-form.png ]",
+        "section.verificacion": "Verificación",
+        "verif.1.label": "Test de conexión exitoso.",
+        "verif.1.body": "El botón Probar conexión debe responder con éxito (consulta la versión del servidor MISP). La tarjeta del conector cambia a estado Configurado.",
+        "verif.2.label": "Prueba mínima con el agente.",
+        "verif.2.body": "Abre una conversación nueva con el agente y pídele:",
+        "verif.2.quote": "\"Busca en MISP si hay algún IOC registrado con el valor 8.8.8.8.\"",
+        "verif.2.body2": "El agente debe responder con los resultados reales de tu instancia (o indicar que no hay coincidencias). Si lo hace, el conector quedó operativo de punta a punta. Evita pedirle que cree eventos o atributos de prueba en una instancia productiva.",
+        "section.solucion_problemas": "Solución de problemas",
+        "table.mensaje": "Mensaje / síntoma",
+        "table.causa": "Causa probable y solución",
+        "tbl.1.sintoma": "\"Auth Key inválida o sin permiso suficiente\" (error 401/403)",
+        "tbl.1.causa": "La Auth Key es incorrecta, expiró o fue revocada, o el rol del usuario de servicio no tiene <code>Perm: Auth</code>. Genera una nueva Auth Key desde el perfil del usuario (Event Actions → Auth keys) y actualízala en el formulario de Ruvic.",
+        "tbl.2.sintoma": "\"No se pudo alcanzar MISP\" (timeout de red)",
+        "tbl.2.causa": "La plataforma Ruvic no alcanza el host/puerto de MISP. Verifica que la URL base sea correcta y accesible por HTTPS desde fuera de tu red interna, revisa el firewall y aumenta el Timeout de conexión si la instancia responde lento.",
+        "tbl.3.sintoma": "Error al agregar un atributo: el evento no existe",
+        "tbl.3.causa": "<code>add_attribute</code> requiere un <code>event_id</code> válido, obtenido del resultado de <code>create_event</code> o de una búsqueda previa. Verifica que el evento exista y sea visible para el usuario de servicio.",
+        "tbl.4.sintoma": "Error de datos: tipo de atributo inválido",
+        "tbl.4.causa": "El <code>type_</code> indicado no coincide con el vocabulario controlado de MISP. Usa tipos válidos como <code>ip-dst</code>, <code>ip-src</code>, <code>domain</code>, <code>hostname</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>, <code>email-src</code>.",
+        "tbl.5.sintoma": "El conector aparece \"Sin configurar\" tras guardar",
+        "tbl.5.causa": "Algún campo obligatorio quedó vacío (URL base o Auth Key). Ábrelo de nuevo y completa ambos campos; luego pulsa Probar conexión.",
+        "section.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        "faq.1.q": "¿El agente puede crear datos reales en MISP?",
+        "faq.1.a": "Sí. A diferencia de conectores de solo lectura, <code>create_event</code> crea eventos reales y <code>add_attribute</code> agrega atributos reales y permanentes a tu instancia. El agente debe confirmar contigo antes de ejecutar estas operaciones si no fueron pedidas explícitamente. Usa siempre <code>distribution=0</code> (solo tu organización) salvo que quieras compartir el evento más ampliamente.",
+        "faq.2.q": "¿Dónde queda guardada la Auth Key?",
+        "faq.2.a": "Como secreto cifrado en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarla; solo indica \"definida\". Para cambiarla, genera una nueva Auth Key en MISP y pégala en el formulario del conector; para conservarla al editar otros campos, deja el campo vacío.",
+        "faq.3.q": "Rotación de la Auth Key",
+        "faq.3.a": "Recomendado cada 90 días o según tu política: genera una nueva Auth Key desde el perfil del usuario de servicio (Event Actions → Auth keys → Add authentication key), revoca la anterior, actualízala en el formulario del conector y pulsa Probar conexión.",
+        "faq.4.q": "¿Qué hago si la Auth Key se compromete?",
+        "faq.4.a1": "Revoca la Auth Key comprometida de inmediato desde Event Actions → Auth keys en el perfil del usuario de servicio, o desactiva el usuario en Administration → Users.",
+        "faq.4.a2": "Revisa los logs de auditoría de MISP para detectar eventos o atributos creados sin autorización.",
+        "faq.4.a3": "Genera una nueva Auth Key y actualízala en el formulario del conector de Ruvic.",
+        "callout.buenas_practicas.title": "Buenas prácticas",
+        "callout.buenas_practicas.body": "Usa siempre un usuario de servicio dedicado con un rol de mínimo privilegio (<code>Perm: Auth</code> + <code>Perm: Add</code> únicamente); nunca otorgues <code>Perm: Site Admin</code>, <code>Perm: Sync</code> ni <code>Perm: Audit</code> al usuario del conector; y no compartas la Auth Key por canales no seguros.",
+      },
+      en: {
+        doc_title: "MISP Connector — Ruvic",
+        toc_title: "Contents",
+        "toc.que_es": "What it is and what it's for",
+        "toc.prerrequisitos": "Prerequisites",
+        "toc.configuracion_fabricante": "Vendor / provider setup",
+        "toc.permisos": "Required permissions",
+        "toc.configuracion_ruvic": "Configuration in Ruvic",
+        "toc.verificacion": "Verification",
+        "toc.solucion_problemas": "Troubleshooting",
+        "toc.faq_seguridad": "FAQ and security notes",
+        guide_title: "MISP Connector — Setup Guide",
+        guide_updated: "Last updated: 2026-07-24",
+        "section.que_es": "What it is and what it's for",
+        "section.que_es.body_1": "The MISP connector lets the Ruvic agent exchange threat intelligence with your MISP instance: it can search for an indicator of compromise (IOC), create an event and add an attribute to an existing event. Once configured, you can ask the agent things like:",
+        "section.que_es.example_1": "\"Check whether IP 45.33.22.11 is already registered as an IOC in MISP.\"",
+        "section.que_es.example_2": "\"Create an event for the phishing campaign detected in finance.\"",
+        "section.que_es.example_3": "\"Add this SHA256 hash as an attribute to event 123.\"",
+        "section.que_es.body_2": "Supported operations:",
+        "table.operacion": "Operation",
+        "table.que_hace": "What it does",
+        "op.search_ioc": "Searches for an indicator of compromise by its value (IP, domain, hash, URL, etc.), with an optional type filter",
+        "op.create_event": "Creates a new threat event (with threat level, distribution and analysis status)",
+        "op.add_attribute": "Adds an attribute (IOC) to an existing event, with category and an optional IDS/IPS flag",
+        "callout.escribe.title": "This connector DOES write data",
+        "callout.escribe.body": "Unlike read-only connectors, `create_event` and `add_attribute` create real, permanent data in your MISP instance. It is not query-only.",
+        "section.prerrequisitos": "Prerequisites",
+        "prereq.1": "A <strong>MISP</strong> instance reachable over HTTPS (self-hosted, cloud, or the official <code>misp/misp-docker</code> image).",
+        "prereq.2": "Administrative access to MISP (<strong>Site Admin</strong> or <strong>Org Admin</strong> role), only during initial setup, to create the custom role and the service user.",
+        "prereq.3"        : "<strong>Network access</strong> from the Ruvic platform to the MISP instance (host and port reachable over HTTPS).",
+        "prereq.4": "The <strong>base URL</strong> of your MISP instance (e.g. <code>https://misp.company.com</code>).",
+        "section.configuracion_fabricante": "Vendor / provider setup",
+        "fabricante.intro": "You will create a <strong>least-privilege custom role</strong> and a <strong>dedicated service user</strong> for Ruvic. Do not reuse your own user or a role with admin permissions: a dedicated user lets you audit the agent's activity and keep access to the minimum necessary.",
+        "step.1.label": "Create the custom role.",
+        "step.1.body": "Go to <strong>Administration → Roles → Add Role</strong>. Create a new role (e.g. <code>ruvic-connector</code>) and enable only <code>Perm: Auth</code> (allows API authentication with an Auth Key) and <code>Perm: Add</code> (allows creating events and adding attributes). Leave every other permission disabled, particularly <code>Perm: Site Admin</code>, <code>Perm: Sync</code>, <code>Perm: Audit</code> and <code>Perm: Delegate</code>.",
+        "img.roles.alt": "[ Screenshot: Administration → Roles form with Perm: Auth and Perm: Add checked — replace with assets/img/misp-role.png ]",
+        "step.2.label": "Create a dedicated service user.",
+        "step.2.body": "Go to <strong>Administration → Users → Add User</strong>. Create a new user (e.g. <code>ruvic-connector@company.com</code>) used exclusively for this connector, not a personal account.",
+        "step.3.label": "Assign the role to the service user.",
+        "step.3.body": "In the user form, select the custom role created in step 1 (<code>ruvic-connector</code>) as the <strong>Role</strong> and save.",
+        "step.4.label": "Generate the service user's Auth Key.",
+        "step.4.body": "Log in as the service user (or ask an administrator to generate it on their behalf) and go to <strong>Event Actions → Auth keys → Add authentication key</strong>. Copy the generated Auth Key immediately: MISP only shows it once.",
+        "img.authkey.alt": "[ Screenshot: Event Actions → Auth keys → Add authentication key — replace with assets/img/misp-authkey.png ]",
+        "step.5.label": "Write down the values for the Ruvic form.",
+        "step.5.body": "Save your instance's base URL (e.g. <code>https://misp.company.com</code>) and the generated Auth Key. You will need them in the next section.",
+        "section.permisos": "Required permissions",
+        "permisos.intro": "Least-privilege principle: the service user's role only needs these two permissions. Do not grant admin or synchronization roles.",
+        "table.permiso": "Permission",
+        "table.para_que": "Why it's needed",
+        "perm.auth": "Allows authenticating against the MISP REST API with the Auth Key. Required for every connector operation.",
+        "perm.add": "Allows creating events (<code>create_event</code>) and adding attributes to existing events (<code>add_attribute</code>).",
+        "callout.no_otorgar.title": "Do not grant these permissions",
+        "callout.no_otorgar.body": "<code>Perm: Site Admin</code> (full platform administration), <code>Perm: Sync</code> (synchronization with other MISP instances) and <code>Perm: Audit</code> (access to audit logs) are not needed for the connector's operations and needlessly widen the blast radius of a compromised Auth Key.",
+        "permisos.nota": "<code>search_ioc</code> uses the attribute search endpoint (<code>/attributes/restSearch</code>), available to any authenticated user with <code>Perm: Auth</code> over the events visible to their organization; no extra permissions required.",
+        "section.configuracion_ruvic": "Configuration in Ruvic",
+        "ruvic.intro": "Go to <strong>Settings → Connectors</strong>, find the <strong>MISP</strong> card and click <strong>Configure</strong>. Fill in the form (<strong>Auth Key</strong> authentication mode) with the values from the previous section:",
+        "table.campo": "Form field",
+        "table.valor": "Value",
+        "field.base_url": "MISP base URL",
+        "field.base_url.value": "Your instance's full URL, with scheme (e.g. <code>https://misp.company.com</code>)",
+        "field.api_key": "Auth Key",
+        "field.api_key.value": "The Auth Key generated in step 4 of the previous section. Stored encrypted as a secret: the UI will never display it again",
+        "field.verify_ssl": "Verify TLS certificate",
+        "field.verify_ssl.value": "On by default. Disable only for instances with a self-signed certificate in test environments",
+        "field.connect_timeout": "Connection timeout (seconds)",
+        "field.connect_timeout.value": "Optional; defaults to <code>15</code> seconds",
+        "ruvic.guardar": "Save and click Test connection — the platform will connect to your MISP instance and confirm the Auth Key and networking work.",
+        "ruvic.boton_probar": "Test connection",
+        "img.form.alt": "[ Screenshot: MISP connector form in Settings → Connectors — replace with assets/img/misp-form.png ]",
+        "section.verificacion": "Verification",
+        "verif.1.label": "Successful connection test.",
+        "verif.1.body": "The Test connection button should succeed (it queries the MISP server version). The connector card switches to Configured status.",
+        "verif.2.label": "Minimal test with the agent.",
+        "verif.2.body": "Open a new conversation with the agent and ask:",
+        "verif.2.quote": "\"Search MISP for any IOC registered with the value 8.8.8.8.\"",
+        "verif.2.body2": "The agent should reply with real results from your instance (or state there are no matches). If it does, the connector is fully operational end to end. Avoid asking it to create test events or attributes on a production instance.",
+        "section.solucion_problemas": "Troubleshooting",
+        "table.mensaje": "Message / symptom",
+        "table.causa": "Likely cause and fix",
+        "tbl.1.sintoma": "\"Invalid Auth Key or insufficient permission\" (401/403 error)",
+        "tbl.1.causa": "The Auth Key is wrong, expired, or was revoked, or the service user's role lacks <code>Perm: Auth</code>. Generate a new Auth Key from the user's profile (Event Actions → Auth keys) and update it in the Ruvic form.",
+        "tbl.2.sintoma": "\"Could not reach MISP\" (network timeout)",
+        "tbl.2.causa": "The Ruvic platform cannot reach MISP's host/port. Verify the base URL is correct and reachable over HTTPS from outside your internal network, check the firewall, and increase the Connection timeout if the instance responds slowly.",
+        "tbl.3.sintoma": "Error adding an attribute: event does not exist",
+        "tbl.3.causa": "<code>add_attribute</code> requires a valid <code>event_id</code>, obtained from the result of <code>create_event</code> or a prior search. Verify the event exists and is visible to the service user.",
+        "tbl.4.sintoma": "Data error: invalid attribute type",
+        "tbl.4.causa": "The given <code>type_</code> does not match MISP's controlled vocabulary. Use valid types such as <code>ip-dst</code>, <code>ip-src</code>, <code>domain</code>, <code>hostname</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>, <code>email-src</code>.",
+        "tbl.5.sintoma": "Connector shows \"Not configured\" after saving",
+        "tbl.5.causa": "A required field was left empty (base URL or Auth Key). Open it again and fill in both fields; then click Test connection.",
+        "section.faq_seguridad": "FAQ and security notes",
+        "faq.1.q": "Can the agent create real data in MISP?",
+        "faq.1.a": "Yes. Unlike read-only connectors, <code>create_event</code> creates real events and <code>add_attribute</code> adds real, permanent attributes to your instance. The agent should confirm with you before running these operations if they were not explicitly requested. Always use <code>distribution=0</code> (your organization only) unless you want to share the event more broadly.",
+        "faq.2.q": "Where is the Auth Key stored?",
+        "faq.2.a": "As an encrypted secret in the platform's credential store, tied to your user. The UI never displays it again; it only shows \"set\". To change it, generate a new Auth Key in MISP and paste it into the connector form; to keep it while editing other fields, leave the field empty.",
+        "faq.3.q": "Auth Key rotation",
+        "faq.3.a": "Recommended every 90 days or per your policy: generate a new Auth Key from the service user's profile (Event Actions → Auth keys → Add authentication key), revoke the old one, update it in the connector form and click Test connection.",
+        "faq.4.q": "What if the Auth Key is compromised?",
+        "faq.4.a1": "Revoke the compromised Auth Key immediately from Event Actions → Auth keys in the service user's profile, or disable the user under Administration → Users.",
+        "faq.4.a2": "Review MISP's audit logs for events or attributes created without authorization.",
+        "faq.4.a3": "Generate a new Auth Key and update it in the Ruvic connector form.",
+        "callout.buenas_practicas.title": "Best practices",
+        "callout.buenas_practicas.body": "Always use a dedicated service user with a least-privilege role (<code>Perm: Auth</code> + <code>Perm: Add</code> only); never grant <code>Perm: Site Admin</code>, <code>Perm: Sync</code> or <code>Perm: Audit</code> to the connector's user; and never share the Auth Key over insecure channels.",
+      },
+    };
+    /* El portal aplica el idioma del usuario (localStorage ruvic-docs-lang)
+       y actualiza [data-i18n], [data-i18n-placeholder] y [data-i18n-alt]. */
+  </script>
+</body>
+</html>

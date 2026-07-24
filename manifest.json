@@ -1,0 +1,62 @@
+{
+  "id": "misp",
+  "name": "MISP",
+  "name_en": "MISP",
+  "version": "1.0.0",
+  "description": "Intercambio de indicadores de amenaza (threat intel) en MISP: buscar un IOC, crear un evento y agregar un atributo",
+  "description_en": "Threat intelligence exchange in MISP: search an IOC, create an event and add an attribute",
+  "icon": "icon.svg",
+  "category": "security",
+  "category_en": "security",
+  "keywords": ["misp", "ciberseguridad", "cybersecurity", "threat intel", "threat intelligence", "ioc", "indicadores de compromiso", "eventos", "atributos"],
+  "library": {
+    "package": "ruvic-misp-connector",
+    "install": "pip install git+https://github.com/Dgirto/MISP.git#subdirectory=lib",
+    "import_name": "ruvic_misp_connector"
+  },
+  "auth_modes": [
+    {
+      "id": "api_key",
+      "label": "Auth Key",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "URL base de MISP",
+          "type": "text",
+          "required": true,
+          "placeholder": "https://misp.empresa.com"
+        },
+        {
+          "key": "api_key",
+          "label": "Auth Key",
+          "type": "password",
+          "secret": true,
+          "required": true,
+          "help_text": "Genera la Auth Key desde el perfil de un usuario de servicio dedicado en MISP (Event Actions → Auth keys → Add authentication key)"
+        },
+        {
+          "key": "verify_ssl",
+          "label": "Verificar certificado TLS",
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "help_text": "Desactívalo solo para instancias con certificado autofirmado en entornos de prueba"
+        },
+        {
+          "key": "connect_timeout",
+          "label": "Timeout de conexión (segundos)",
+          "type": "number",
+          "required": false,
+          "default": "15"
+        }
+      ]
+    }
+  ],
+  "env_prefix": "RUVIC_MISP_",
+  "operations": ["threat_intel.search_ioc", "threat_intel.create_event", "threat_intel.add_attribute"],
+  "test_connection": true,
+  "docs": {
+    "skill": "SKILL.md",
+    "permissions_note": "Crea un rol personalizado en Administration → Roles con los permisos 'Perm: Auth' (acceso API) y 'Perm: Add' (crear eventos y atributos) habilitados. No otorgues 'Perm: Site Admin', 'Perm: Sync' ni 'Perm: Audit'. Asigna ese rol a un usuario de servicio dedicado y genera su Auth Key desde su propio perfil."
+  }
+}
