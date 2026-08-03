@@ -31,7 +31,7 @@ class MispConfig:
     connect_timeout: int = 15
 
     @classmethod
-    def from_env(cls) -> "MispConfig":
+    def from_env(cls) -> MispConfig:
         """Construye la configuración desde las variables RUVIC_MISP_*.
 
         Raises:
