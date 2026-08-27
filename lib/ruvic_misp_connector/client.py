@@ -23,6 +23,12 @@ _VALID_ANALYSIS = {0, 1, 2}
 _VALID_DISTRIBUTION = {0, 1, 2, 3, 4, 5}
 
 
+def _require_str(value: Any, name: str) -> str:
+    if value is not None and not isinstance(value, str):
+        raise MispDataError(f"{name} debe ser un string, no {type(value).__name__}.")
+    return (value or "").strip()
+
+
 class MispClient:
     """Cliente de intercambio de indicadores de amenaza en MISP.
 
@@ -110,7 +116,7 @@ class MispClient:
             >>> client.search_ioc("45.33.22.11")
             [{'type': 'ip-dst', 'value': '45.33.22.11', 'event_id': '123', ...}]
         """
-        value = (value or "").strip()
+        value = _require_str(value, "value")
         if not value:
             raise MispDataError("value no puede estar vacío.")
         body: dict[str, Any] = {"returnFormat": "json", "value": value}
@@ -149,14 +155,14 @@ class MispClient:
             >>> client.create_event("Campaña de phishing detectada")
             {'Event': {'id': '123', 'info': 'Campaña de phishing detectada', ...}}
         """
-        info = (info or "").strip()
+        info = _require_str(info, "info")
         if not info:
             raise MispDataError("info no puede estar vacío.")
-        if distribution not in _VALID_DISTRIBUTION:
+        if not isinstance(distribution, int) or isinstance(distribution, bool) or distribution not in _VALID_DISTRIBUTION:
             raise MispDataError(
                 f"distribution {distribution!r} inválido. Valores permitidos: {sorted(_VALID_DISTRIBUTION)}"
             )
-        if analysis not in _VALID_ANALYSIS:
+        if not isinstance(analysis, int) or isinstance(analysis, bool) or analysis not in _VALID_ANALYSIS:
             raise MispDataError(
                 f"analysis {analysis!r} inválido. Valores permitidos: {sorted(_VALID_ANALYSIS)}"
             )
@@ -203,9 +209,9 @@ class MispClient:
             >>> client.add_attribute("123", "ip-dst", "45.33.22.11", to_ids=True)
             {'Attribute': {'id': '456', 'type': 'ip-dst', 'value': '45.33.22.11', ...}}
         """
-        event_id = (event_id or "").strip()
-        type_ = (type_ or "").strip()
-        value = (value or "").strip()
+        event_id = _require_str(event_id, "event_id")
+        type_ = _require_str(type_, "type_")
+        value = _require_str(value, "value")
         if not event_id or not type_ or not value:
             raise MispDataError("event_id, type_ y value no pueden estar vacíos.")
         body = {
